@@ -944,39 +944,50 @@ static void renderExecPane() {
 static void renderRoiPane() {
     if (!lbl_roi_runs) return;
 
-    int total = (int)s_snap.recent.size();
-    int ok    = (int)s_snap.succeededRecent;
-    int fail  = (int)s_snap.failedRecent;
-    int finished = ok + fail;   // exclude still-running from rate denom
+    // Prefer server-aggregated metrics (real time window). Fall back to the
+    // 12-row snapshot if the metrics call hasn't returned yet.
+    bool haveMetrics = s_snap.metrics.ok;
+    long total, ok, fail;
+    long avgMs;
+    if (haveMetrics) {
+        total = s_snap.metrics.total;
+        ok    = s_snap.metrics.succeeded;
+        fail  = s_snap.metrics.failed + s_snap.metrics.aborted;
+        avgMs = s_snap.metrics.avgDurationMs;
+    } else {
+        total = (long)s_snap.recent.size();
+        ok    = (long)s_snap.succeededRecent;
+        fail  = (long)s_snap.failedRecent;
+        long sumSec = 0; int n = 0;
+        for (auto& ex : s_snap.recent)
+            if (ex.durationSec > 0) { sumSec += ex.durationSec; n++; }
+        avgMs = n > 0 ? (sumSec * 1000 / n) : 0;
+    }
+    long finished = ok + fail;
 
     // Time saved = total runs * ROI_MINS_PER_RUN
-    long mins = (long)total * ROI_MINS_PER_RUN;
+    long mins = total * ROI_MINS_PER_RUN;
     String timeStr;
     if (mins >= 60) timeStr = String(mins / 60) + "h " + String(mins % 60) + "m";
     else            timeStr = String(mins) + "m";
-    lv_label_set_text(lbl_roi_time, timeStr.c_str());
+    String window = haveMetrics ? s_snap.metrics.window : String("recent");
+    lv_label_set_text(lbl_roi_time, (timeStr + "  /  " + window).c_str());
 
     lv_label_set_text(lbl_roi_runs, String(total).c_str());
 
-    int rate = finished > 0 ? (ok * 100) / finished : 0;
+    int rate = finished > 0 ? (int)((ok * 100) / finished) : 0;
     String successStr = String(rate) + "%";
     lv_label_set_text(lbl_roi_success, successStr.c_str());
     lv_obj_set_style_text_color(lbl_roi_success,
         rate >= 90 ? COL_GREEN : (rate >= 70 ? COL_AMBER : COL_RED), 0);
 
-    // USD saved: mins * (rate/hour) / 60
     int dollars = (int)((float)mins * ROI_RATE_USD_HR / 60.0f);
     lv_label_set_text(lbl_roi_dollars, (String("$") + dollars).c_str());
 
-    // Average duration (over finished executions with known duration)
-    long totalDur = 0; int n = 0;
-    for (auto& ex : s_snap.recent) {
-        if (ex.durationSec > 0) { totalDur += ex.durationSec; n++; }
-    }
-    if (n == 0) {
+    if (avgMs <= 0) {
         lv_label_set_text(lbl_roi_avg, "-");
     } else {
-        long avg = totalDur / n;
+        long avg = avgMs / 1000;
         String avgStr;
         if (avg >= 3600)    avgStr = String(avg / 3600) + "h " + String((avg % 3600) / 60) + "m";
         else if (avg >= 60) avgStr = String(avg / 60) + "m " + String(avg % 60) + "s";
@@ -984,7 +995,6 @@ static void renderRoiPane() {
         lv_label_set_text(lbl_roi_avg, avgStr.c_str());
     }
 
-    // Success bar width — 308 - 2*border = ~304 available inside
     if (bar_roi_success) {
         int barW = (rate * 306) / 100;
         if (barW < 0) barW = 0; if (barW > 306) barW = 306;

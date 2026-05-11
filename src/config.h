@@ -30,6 +30,7 @@
 #define RD_API_VERSION         41      // minimum Rundeck API version we target
 #define RD_HTTP_TIMEOUT_MS     8000
 #define RD_MAX_EXECUTIONS      12      // bounded list to keep heap small
+#define RD_METRICS_WINDOW      "24h"   // recentFilter window for /executions/metrics
 
 // HTTP web portal
 #define PORTAL_HTTP_PORT 80

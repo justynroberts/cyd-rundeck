@@ -267,6 +267,44 @@ Snapshot rundeck::fetchSnapshot() {
         }
     }
 
+    // 3) Server-aggregated metrics over RD_METRICS_WINDOW (e.g. last 24h).
+    {
+        snap.metrics.ok = false;
+        snap.metrics.window = String(RD_METRICS_WINDOW);
+        String mpath = "/project/" + effProj + "/executions/metrics?recentFilter=" + String(RD_METRICS_WINDOW);
+        int mcode = 0;
+        String mbody, merr;
+        if (httpGet(apiUrl(base, mpath), tok, mcode, mbody, merr)) {
+            JsonDocument doc;
+            if (deserializeJson(doc, mbody) == DeserializationError::Ok) {
+                snap.metrics.total     = doc["total"].as<long>();
+                snap.metrics.succeeded = doc["status"]["succeeded"].as<long>();
+                snap.metrics.failed    = doc["status"]["failed"].as<long>();
+                snap.metrics.aborted   = doc["status"]["aborted"].as<long>();
+                // duration.average may be either a number (ms) or a string
+                // like "18.234s" / "1m 30s". Handle the common shapes.
+                if (doc["duration"]["average"].is<long>()) {
+                    snap.metrics.avgDurationMs = doc["duration"]["average"].as<long>();
+                } else {
+                    const char* s = doc["duration"]["average"].as<const char*>();
+                    snap.metrics.avgDurationMs = 0;
+                    if (s) {
+                        // crude: pull a number, look at suffix
+                        double v = atof(s);
+                        const char* u = s;
+                        while (*u && (*u == '.' || *u == '-' || (*u >= '0' && *u <= '9'))) u++;
+                        while (*u == ' ') u++;
+                        if      (*u == 'h')                  snap.metrics.avgDurationMs = (long)(v * 3600000);
+                        else if (*u == 'm' && u[1] != 's')   snap.metrics.avgDurationMs = (long)(v * 60000);
+                        else if (*u == 's')                  snap.metrics.avgDurationMs = (long)(v * 1000);
+                        else if (*u == 'm' && u[1] == 's')   snap.metrics.avgDurationMs = (long)v;
+                    }
+                }
+                snap.metrics.ok = true;
+            }
+        }
+    }
+
     snap.ok = true;
     return snap;
 }

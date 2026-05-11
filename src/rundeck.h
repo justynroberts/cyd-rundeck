@@ -26,14 +26,25 @@ namespace rundeck {
         long       durationSec;   // computed, -1 if running
     };
 
+    struct Metrics {
+        bool   ok;             // true if the metrics fetch succeeded
+        String window;         // e.g. "24h" (what was requested)
+        long   total;          // total executions in window
+        long   succeeded;
+        long   failed;
+        long   aborted;
+        long   avgDurationMs;  // average duration of finished execs
+    };
+
     struct Snapshot {
         bool       ok;
         String     error;            // non-empty on failure
         uint32_t   running;          // count of running executions
-        uint32_t   succeededRecent;  // last N succeeded
-        uint32_t   failedRecent;     // last N failed
+        uint32_t   succeededRecent;  // last N succeeded (rows-window)
+        uint32_t   failedRecent;     // last N failed (rows-window)
         std::vector<Execution> recent;  // bounded to RD_MAX_EXECUTIONS
         String     serverVersion;    // from system/info, cached
+        Metrics    metrics;          // server-aggregated, time-windowed
     };
 
     // One-shot calls. All HTTPS, all use the in-NVS base URL + token.
